@@ -13,4 +13,4 @@ After the plugin installation and activation, just go to Settings > Apimo API to
 The plugin uses the WordPress internal scheduler system. A synchronization with Apimo API is automatically made every hour.
 
 ## Pull Requests
-I'm open to pull requests for additional features and/or improvements. The plugin currently only supports WMPL for automatic translations but can be easily improved to support other translation plugins.
+I'm open to pull requests for additional features and/or improvements.
