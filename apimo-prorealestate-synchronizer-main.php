@@ -125,7 +125,7 @@ class ApimoProrealestateSynchronizer
       'updated_at' => $property->updated_at,
       'postTitle' => array(),
       'postContent' => array(),
-      'images_url' => array(),
+      'images' => array(),
       'customMetaAltTitle' => $property->address,
       'customMetaPrice' => (!$property->price->value ? __('Price on ask') : $property->price->value),
       'customMetaPricePrefix' => '',
@@ -177,7 +177,11 @@ class ApimoProrealestateSynchronizer
     }
 
     foreach ($property->pictures as $picture) {
-      $data['images_url'][] = $picture->url;
+      $data['images'][] = array(
+        'id' => $picture->id,
+        'url' => $picture->url,
+        'rank' => $picture->rank
+      );
     }
 
     return $data;
@@ -206,7 +210,7 @@ class ApimoProrealestateSynchronizer
     }
 
     $postUpdatedAt = $data['updated_at'];
-    $imagesUrl = $data['images_url'];
+    $images = $data['images'];
     $customMetaAltTitle = $data['customMetaAltTitle'];
     $ctPrice = str_replace(array('.', ','), '', $data['customMetaPrice']);
     $customMetaPricePrefix = $data['customMetaPricePrefix'];
@@ -258,14 +262,14 @@ class ApimoProrealestateSynchronizer
         wp_update_post($postInformation);
       }
 
-      // Delete attachments
+      // Delete attachments that has been removed
       $attachments = get_attached_media('image', $postId);
       foreach ($attachments as $attachment) {
         $imageStillPresent = false;
-        foreach ($imagesUrl as $imageId => $imageUrl) {
-          if ($attachment->post_title == $this->getFileNameFromURL($imageUrl)) {
+        foreach ($images as $image) {
+          if ($attachment->post_content == $image['id'] &&
+            $this->getFileNameFromURL($attachment->guid) == $this->getFileNameFromURL($image['url'])) {
             $imageStillPresent = true;
-            unset($imagesUrl[$imageId]);
           }
         }
         if (!$imageStillPresent) {
@@ -276,36 +280,43 @@ class ApimoProrealestateSynchronizer
       // Updates the image and the featured image with the first given image
       $imagesIds = array();
 
-      foreach ($imagesUrl as $imageId => $imageUrl) {
-        media_sideload_image($imageUrl, $postId);
+      foreach ($images as $image) {
+        // Tries to retrieve an existing media
+        $media = $this->isMediaPosted($image['id']);
 
-        // Retrieve the last inserted media
-        $args = array(
-          'post_type' => 'attachment',
-          'numberposts' => 1,
-          'orderby' => 'date',
-          'order' => 'DESC',
-        );
-        $medias = get_posts($args);
+        // If the media does not exist, upload it
+        if (!$media) {
+          media_sideload_image($image['url'], $postId);
 
-        // Just one media, but still an array returned by get_posts
-        foreach ($medias as $attachment) {
-          // Make sure the media's name is equal to the file name
-          wp_update_post(array(
-            'ID' => $attachment->ID,
-            'post_name' => $this->getFileNameFromURL($imageUrl),
-            'post_title' => $this->getFileNameFromURL($imageUrl),
-          ));
-          $media = $attachment;
+          // Retrieve the last inserted media
+          $args = array(
+            'post_type' => 'attachment',
+            'numberposts' => 1,
+            'orderby' => 'date',
+            'order' => 'DESC',
+          );
+          $medias = get_posts($args);
+
+          // Just one media, but still an array returned by get_posts
+          foreach ($medias as $attachment) {
+            // Make sure the media's name is equal to the file name
+            wp_update_post(array(
+              'ID' => $attachment->ID,
+              'post_name' => $postTitle,
+              'post_title' => $postTitle,
+              'post_content' => $image['id'],
+            ));
+            $media = $attachment;
+          }
         }
 
         if (!empty($media) && !is_wp_error($media)) {
-          // Set the first image as the thumbnail
-          if (empty($imagesIds)) {
-            set_post_thumbnail($postId, $media->ID);
-          }
+          $imagesIds[$image['rank']] = $media->ID;
+        }
 
-          $imagesIds[] = $media->ID;
+        // Set the first image as the thumbnail
+        if ($image['rank'] == 1) {
+          set_post_thumbnail($postId, $media->ID);
         }
       }
 
@@ -387,21 +398,19 @@ class ApimoProrealestateSynchronizer
    * Verifies if a media is already posted or not for a given image URL.
    *
    * @access private
-   * @param string $imageUrl
+   * @param int $imageId
    * @return object
    */
-  private function isMediaPosted($imageUrl)
+  private function isMediaPosted($imageId)
   {
-    $imageName = $this->getFileNameFromURL($imageUrl);
-
     $args = array(
       'post_type' => 'attachment',
       'posts_per_page' => -1,
       'post_status' => 'any',
-      's' => $imageName,
+      'content' => $imageId,
     );
 
-    $medias = get_posts($args);
+    $medias = ApimoProrealestateSynchronizer_PostsByContent::get($args);
 
     if (isset($medias) && is_array($medias)) {
       foreach ($medias as $media) {
