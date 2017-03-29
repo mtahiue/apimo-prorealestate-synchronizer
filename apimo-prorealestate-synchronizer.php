@@ -10,6 +10,7 @@
 // Includes plugin components
 include_once dirname(__FILE__) . '/apimo-prorealestate-synchronizer-options.php';
 include_once dirname(__FILE__) . '/apimo-prorealestate-synchronizer-main.php';
+include_once dirname(__FILE__) . '/apimo-prorealestate-synchronizer-posts-by-content.php';
 
 // Register the cron job
 register_activation_hook(__FILE__, array('ApimoProrealestateSynchronizer', 'install'));
